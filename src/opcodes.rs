@@ -133,8 +133,8 @@ lazy_static! {
 
         /* Branching */
 
-        OpCode::new(0x4c, "JMP", 3, 3, AddressingMode::NoneAddressing), //AddressingMode that acts as Immidiate
-        OpCode::new(0x6c, "JMP", 3, 5, AddressingMode::NoneAddressing), //AddressingMode:Indirect with 6502 bug
+        OpCode::new(0x4c, "JMP", 3, 3, AddressingMode::Absolute), //AddressingMode that acts as Immidiate
+        //OpCode::new(0x6c, "JMP", 3, 5, AddressingMode::Indirect), //AddressingMode:Indirect with 6502 bug
 
         OpCode::new(0x20, "JSR", 3, 6, AddressingMode::NoneAddressing),
         OpCode::new(0x60, "RTS", 1, 6, AddressingMode::NoneAddressing),

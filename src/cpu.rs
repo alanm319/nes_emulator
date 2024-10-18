@@ -59,13 +59,34 @@ impl CPU {
         }
     }
 
+    pub fn mem_read(&self, addr: u16) -> u8 {
+        self.memory[addr as usize]
+    }
+
+    pub fn mem_write(&mut self, addr: u16, data: u8) {
+        self.memory[addr as usize] = data;
+    }
+
+    fn mem_read_u16(&self, addr: u16) -> u16 {
+        let low= self.mem_read(addr) as u16;
+        let high= self.mem_read(addr+1) as u16;
+        (high << 8) | (low as u16) 
+    }
+
+    fn mem_write_u16(&mut self, addr: u16, data: u16) {
+        let low = (data & 0xFF) as u8;
+        let high = (data >> 8) as u8;
+        self.mem_write(addr, low);
+        self.mem_write(addr+1, high);        
+    }
+
     fn stack_push(&mut self, value: u8) {
-        self.mem_write(STACK_BASE + self.stack_pointer as u16, value);
+        self.mem_write(STACK_BASE as u16 + self.stack_pointer as u16, value);
         self.stack_pointer = self.stack_pointer.wrapping_sub(1);
     }
 
     fn stack_pull(&mut self) -> u8 {
-        self.stack_pointer = self.stack_pointer.wrapping_sub(1);
+        self.stack_pointer = self.stack_pointer.wrapping_add(1);
         self.mem_read(STACK_BASE as u16 + self.stack_pointer as u16)
     }
 
@@ -82,27 +103,6 @@ impl CPU {
         (high << 8) | low
     }
 
-    fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-    }
-
-    fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
-    }
-
-    fn mem_read_u16(&self, pos: u16) -> u16 {
-        let low= self.mem_read(pos) as u16;
-        let high= self.mem_read(pos+1) as u16;
-        (high << 8) | low 
-    }
-
-    fn mem_write_u16(&mut self, pos: u16, data: u16) {
-        let low = (data & 0xFF) as u8;
-        let high = (data >> 8) as u8;
-        self.mem_write(pos, low);
-        self.mem_write(pos+1, high);        
-    }
-
     // used by ADC and SBC
     // updates all flags accordingly
     fn add_to_register_a(&mut self, value: u8) {
@@ -116,7 +116,7 @@ impl CPU {
             self.status.remove(StatusFlags::CARRY);
         }
         
-        if !(self.register_a ^ value) & (self.register_a ^ result) & 0x80 != 0 {
+        if (!(self.register_a ^ value) & (self.register_a ^ result) & 0x80) != 0 {
             self.status.insert(StatusFlags::OVERFLOW);
         } else {
             self.status.remove(StatusFlags::OVERFLOW);
@@ -150,7 +150,7 @@ impl CPU {
 
         self.register_a = self.register_a << 1;
     }
-    
+    // untested?
     fn asl(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let mut value = self.mem_read(addr);
@@ -168,8 +168,7 @@ impl CPU {
     fn branch(&mut self, condition: bool) {
         if condition {
             let offset = self.mem_read(self.program_counter) as i8; // signed byte relative offset
-            let abs_addr = self.program_counter + 1 + offset as u16;
-
+            let abs_addr = self.program_counter.wrapping_add(1).wrapping_add(offset as u16);
             self.program_counter = abs_addr;
         }
     }
@@ -177,7 +176,7 @@ impl CPU {
     fn bcc(&mut self) {
         self.branch(!self.status.contains(StatusFlags::CARRY));
     }
-
+    // untesetd
     fn bcs(&mut self) {
         self.branch(self.status.contains(StatusFlags::CARRY));
     }
@@ -185,7 +184,7 @@ impl CPU {
     fn beq(&mut self) {
         self.branch(self.status.contains(StatusFlags::ZERO));
     }
-
+    // untested
     fn bit(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
@@ -208,6 +207,7 @@ impl CPU {
         self.branch(!self.status.contains(StatusFlags::ZERO));
     }
 
+    // untested
     fn bpl(&mut self) {
         self.branch(!self.status.contains(StatusFlags::NEGATIVE));
     }
@@ -235,7 +235,7 @@ impl CPU {
     fn clv(&mut self) {
         self.status.remove(StatusFlags::OVERFLOW);
     }
-
+    // untested
     fn cmp(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
@@ -336,9 +336,9 @@ impl CPU {
                 /*  This accounts for the 6502 indirect addressing bug:
                     https://www.nesdev.org/obelisk-6502-guide/reference.html#JMP
                  */ 
-                let second_addr = if first_addr & 0x00ff == 0x00ff {
+                let second_addr = if first_addr & 0x00FF == 0x00FF {
                     let low = self.mem_read(first_addr);
-                    let high = self.mem_read(first_addr & 0xff00);
+                    let high = self.mem_read(first_addr & 0xFF00);
                     (high as u16) << 8 | (low as u16)
                 } else {
                     self.mem_read_u16(first_addr)
@@ -352,7 +352,7 @@ impl CPU {
             }
         }
     }
-
+    // untested
     fn jsr(&mut self) {
         self.stack_push_u16(self.program_counter + 2 - 1);
         let addr = self.mem_read_u16(self.program_counter);
@@ -408,7 +408,7 @@ impl CPU {
         self.mem_write(addr, value);
         self.update_zero_and_negative_flags(value);
     }
-
+    // untested
     fn ora(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         let value = self.mem_read(addr);
@@ -502,6 +502,7 @@ impl CPU {
         self.program_counter = self.stack_pull_u16();
     }
 
+    // rts
     fn rts(&mut self) {
         self.program_counter = self.stack_pull_u16() + 1;
     }
@@ -524,7 +525,7 @@ impl CPU {
     fn sei(&mut self) {
         self.status.insert(StatusFlags::INTERRUPT_DISABLE);
     }
-
+    // untested?
     fn sta(&mut self, mode: &AddressingMode) {
         let addr = self.get_operand_address(mode);
         self.mem_write(addr, self.register_a);
@@ -618,17 +619,22 @@ impl CPU {
             AddressingMode::IndirectX => {
                 let base = self.mem_read(self.program_counter);
                 let ptr: u8 = base.wrapping_add(self.register_x);
+                
                 let low = self.mem_read(ptr as u16);
                 let high = self.mem_read(ptr.wrapping_add(1) as u16);
                 (high as u16) << 8 | (low as u16)
+                //self.mem_read_u16(ptr  as u16)
             }
 
             AddressingMode::IndirectY => {
                 let base = self.mem_read(self.program_counter);
-                let ptr: u8 = base.wrapping_add(self.register_y);
-                let low = self.mem_read(ptr as u16);
-                let high = self.mem_read(ptr.wrapping_add(1) as u16);
-                (high as u16) << 8 | (low as u16)
+                //let ptr = self.mem_read_u16(base as u16);
+                //ptr.wrapping_add(self.register_y as u16)
+
+                let low = self.mem_read(base as u16);
+                let high = self.mem_read((base as u8).wrapping_add(1) as u16);
+                let deref_base = (high as u16) << 8 | (low as u16);
+                deref_base.wrapping_add(self.register_y as u16)
             }
 
             AddressingMode::Indirect | AddressingMode::NoneAddressing => {
@@ -638,34 +644,45 @@ impl CPU {
     }
 
     pub fn load_and_run(&mut self, program: Vec<u8>) {
+        println!("Load and run");
         self.load(program);
         self.reset();
-        self.run()
+        self.run();
+    }
+
+    pub fn run(&mut self) {
+        println!("Running...");
+       self.run_with_callback(|_| {});
     }
 
     pub fn reset(&mut self) {
         self.register_a = 0;
         self.register_x = 0;
         self.register_y = 0;
-        self.status = StatusFlags::empty();
+        self.status = StatusFlags::from_bits_truncate(0b0010_00100);
         self.stack_pointer = STACK_RESET;
         self.program_counter = self.mem_read_u16(0xFFFC);
     }
 
     pub fn load(&mut self, program: Vec<u8>) {
-        self.memory[0x8000 .. (0x8000 + program.len())].copy_from_slice(&program[..]);
-        self.mem_write_u16(0xFFFC, 0x8000);
+        self.memory[0x0600 .. (0x0600 + program.len())].copy_from_slice(&program[..]);
+        self.mem_write_u16(0xFFFC, 0x0600);
+        //println!("loaded game");
     }
 
-    pub fn run(&mut self) {
+    pub fn run_with_callback<F>(&mut self, mut callback: F)
+    where
+        F: FnMut(&mut CPU) {
         //Hashmap where keys are actual opcodes and values are opcodes objects
         let ref opcodes_map: HashMap<u8, &'static opcodes::OpCode> = *opcodes::OPCODES_MAP;
 
         loop {
+            
             let code = self.mem_read(self.program_counter);
             self.program_counter += 1;
             let opcode = opcodes_map.get(&code).expect(&format!("OpCode {:x} is not recognized", code));
             let prev_pc = self.program_counter;
+            println!("running {:#x}", code);
             match code {
 
                 0x69 | 0x65 | 0x75 | 0x6D | 0x7D | 0x79 | 0x61 | 0x71 => {
@@ -676,7 +693,9 @@ impl CPU {
                     self.and(&opcode.mode);
                 }
 
-                0x0A | 0x06 | 0x16 | 0x0E | 0x1E => {
+                0x0A => self.asl_accumulator(),
+
+                0x06 | 0x16 | 0x0E | 0x1E => {
                     self.asl(&opcode.mode);
                 }
 
@@ -744,7 +763,7 @@ impl CPU {
 
                 0x20 => self.jsr(),
                 
-                0xA9 | 0xa5 | 0xad | 0xbd | 0xb9 | 0xa1 | 0xb1 => {
+                0xA9 | 0xA5 | 0xB5 | 0xAD | 0xBD | 0xB9 | 0xA1 | 0xB1 => {
                     self.lda(&opcode.mode);
                 }
 
@@ -756,7 +775,9 @@ impl CPU {
                     self.ldy(&opcode.mode);
                 }
 
-                0x4A | 0x46 | 0x56 | 0x4E | 0x5E => {
+                0x4A => self.lsr_accumulator(),
+
+                0x46 | 0x56 | 0x4E | 0x5E => {
                     self.lsr(&opcode.mode);
                 }
 
@@ -774,11 +795,15 @@ impl CPU {
 
                 0x28 => self.plp(),
 
-                0x2A | 0x26 | 0x36 | 0x2E | 0x3E => {
+                0x2A => self.rol_accumulator(),
+
+                0x26 | 0x36 | 0x2E | 0x3E => {
                     self.rol(&opcode.mode);
                 }
 
-                0x6A | 0x66 | 0x76 | 0x6E | 0x7E => {
+                0x6A => self.ror_accumulator(),
+
+                0x66 | 0x76 | 0x6E | 0x7E => {
                     self.ror(&opcode.mode);
                 }
 
@@ -804,7 +829,7 @@ impl CPU {
                     self.stx(&opcode.mode);
                 }
 
-                0x84 | 0x94 | 0x86 => {
+                0x84 | 0x94 | 0x8C => {
                     self.sty(&opcode.mode);
                 }
 
@@ -826,6 +851,8 @@ impl CPU {
             if prev_pc == self.program_counter {
                 self.program_counter += (opcode.len - 1) as u16;
             } 
+
+            callback(self);
         }
     }
 }
@@ -835,51 +862,209 @@ mod test {
     use super::*;
 
     #[test]
-   fn test_0xa9_lda_immediate_load_data() {
+   fn test_lda_immediate_load_data() {
        let mut cpu = CPU::new();
-       cpu.load_and_run(vec![0xa9, 0x05, 0x00]);
+       cpu.load_and_run(vec![0xA9, 0x05, 0x00]);
        assert_eq!(cpu.register_a, 0x05);
-       assert!(cpu.status.contains(StatusFlags::ZERO));
-       assert!(cpu.status.contains(StatusFlags::NEGATIVE));
+       assert!(!cpu.status.contains(StatusFlags::ZERO));
+       assert!(!cpu.status.contains(StatusFlags::NEGATIVE));
    }
 
     #[test]
-    fn test_0xa9_lda_zero_flag() {
+    fn test_lda_zero_flag() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0x00, 0x00]);
+        cpu.load_and_run(vec![0xA9, 0x00, 0x00]);
         assert!(cpu.status.contains(StatusFlags::ZERO));
     }
 
     #[test]
-    fn test_0xaa_tax_move_a_to_x() {
+    fn test_lda_negative_flag() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0x0a, 0xaa, 0x00]);
-  
-        assert_eq!(cpu.register_x, 10);
+        cpu.load_and_run(vec![0xA9, 0xFF, 0x00]);
+        assert!(cpu.status.contains(StatusFlags::NEGATIVE));
     }
 
     #[test]
-   fn test_5_ops_working_together() {
-       let mut cpu = CPU::new();
-       cpu.load_and_run(vec![0xa9, 0xc0, 0xaa, 0xe8, 0x00]);
- 
-       assert_eq!(cpu.register_x, 0xc1);
-   }
+    fn test_lda_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x10, 0x55);
+        cpu.load_and_run(vec![0xA5, 0x10, 0x00]);
+        assert_eq!(cpu.register_a, 0x55);
+    }
+
+    #[test]
+    fn test_lda_zero_page_x() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x11, 0x05);
+        cpu.load_and_run(vec![0xE8, 0xB5, 0x10, 0x00]);
+        assert_eq!(cpu.register_a, 0x05);
+    }
+
+    #[test]
+    fn test_lda_absolute() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x1020, 0x05);
+        cpu.load_and_run(vec![0xAD, 0x20, 0x10, 0x00]);
+        assert_eq!(cpu.register_a, 0x05);
+    }
+
+    #[test]
+    fn test_lda_absolute_x() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x1001, 0x05);
+        cpu.load_and_run(vec![0xE8, 0xBD, 0x00, 0x10, 0x00]);
+        assert_eq!(cpu.register_a, 0x05);
+    }
+
+    #[test]
+    fn test_lda_absolute_y() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x1001, 0x05);
+        cpu.load_and_run(vec![0xC8, 0xB9, 0x00, 0x10, 0x00]);
+        assert_eq!(cpu.register_a, 0x05);
+    }
+
+    #[test]
+    fn test_lda_indirect_x() {
+        let mut cpu = CPU::new();
+        cpu.mem_write_u16(0x0002, 0x1515);
+        cpu.mem_write(0x1515, 0x05);
+        cpu.load_and_run(vec![0xE8, 0xA1, 0x01, 0x00]);
+        assert_eq!(cpu.register_a, 0x05);
+    }
+
+    #[test]
+    fn test_lda_indirect_y() {
+        let mut cpu = CPU::new();
+        cpu.mem_write_u16(0x0010, 0x1000);
+        cpu.mem_write(0x1001, 0x05);
+        cpu.load_and_run(vec![0xC8, 0xB1, 0x10, 0x00]);
+        assert_eq!(cpu.register_a, 0x05);
+    }
+
+    #[test]
+    fn test_tax_move_a_to_x() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x0A, 0xAA, 0x00]);
+        assert_eq!(cpu.register_x, 0x0A);
+    }
 
     #[test]
     fn test_inx_overflow() {
         let mut cpu = CPU::new();
-        cpu.load_and_run(vec![0xa9, 0xff, 0xaa, 0xe8, 0xe8, 0x00]);
-
+        cpu.load_and_run(vec![0xA9, 0xFF, 0xAA, 0xE8, 0xE8, 0x00]);
         assert_eq!(cpu.register_x, 1);
     }
 
     #[test]
-    fn test_lda_from_memory() {
+    fn test_sta_absolute() {
         let mut cpu = CPU::new();
-        cpu.mem_write(0x10, 0x55);
-        cpu.load_and_run(vec![0xa5, 0x10, 0x00]);
-        assert_eq!(cpu.register_a, 0x55);
+        cpu.load_and_run(vec![0xA9, 0x05, 0x8D, 0x00, 0x10, 0x00]);
+        assert_eq!(0x05, cpu.mem_read(0x1000));
     }
+
+    #[test]
+    fn test_adc_immidiate() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x05, 0x69, 0x01, 0x00]);
+        assert_eq!(0x06, cpu.register_a);
+    }
+
+    #[test]
+    fn test_adc_overflow_flag() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x50, 0x69, 0x50, 0x00]);
+        assert_eq!(0xA0, cpu.register_a);
+        assert!(cpu.status.contains(StatusFlags::OVERFLOW));
+    }
+
+    #[test]
+    fn test_adc_carry_flag() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x80, 0x69, 0x80, 0x00]);
+        assert_eq!(cpu.register_a, 0x00);
+        assert!(cpu.status.contains(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_adc_with_carry() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x80, 0x69, 0x80, 0x69, 0x01, 0x00]);
+        assert_eq!(cpu.register_a, 0x02);
+        assert!(!cpu.status.contains(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_and_immidiate() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0xFF, 0x29, 0xF0]);
+        assert_eq!(cpu.register_a, 0xFF & 0xF0);
+    }
+
+    #[test]
+    fn test_asl_accumulator() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0xFF, 0x0A, 0x00]);
+        assert_eq!(cpu.register_a, 0xFF << 1);
+        assert!(cpu.status.contains(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_clc() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x80, 0x69, 0x80, 0x18, 0x00]);
+        assert!(!cpu.status.contains(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_clv() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x50, 0x69, 0x50, 0xB8, 0x00]);
+        assert!(!cpu.status.contains(StatusFlags::OVERFLOW));
+    }
+
+    #[test]
+    fn test_asl_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x0010, 0x0F);
+        cpu.load_and_run(vec![0x6, 0x10, 0x00]);
+        assert_eq!(cpu.mem_read(0x0010), 0x0F << 1);
+        assert!(!cpu.status.contains(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_cmp_carry_flag() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x10, 0xC9, 0x05]);
+        assert!(cpu.status.contains(StatusFlags::CARRY));
+    }
+
+    #[test]
+    fn test_cmp_zero_flag() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x10, 0xC9, 0x10]);
+        assert!(cpu.status.contains(StatusFlags::ZERO));
+    }
+
+    #[test]
+    fn test_cmp_negative_flag() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0xFF, 0xC9, 0x01]);
+        assert!(cpu.status.contains(StatusFlags::NEGATIVE));
+    }
+
+    #[test]
+    fn test_cpx_carry_and_zero_flags() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xE8, 0xE0, 0x01, 0x00]);
+        assert!(cpu.status.contains(StatusFlags::CARRY));
+        assert!(cpu.status.contains(StatusFlags::ZERO));
+    }
+
+    
+
+    
+
+  
 
 }
