@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use bitflags::bitflags;
 
 use crate::opcodes;
+use crate::bus::Bus;
 
 const STACK_BASE: u16 = 0x0100;
 const STACK_RESET: u8 = 0xFD;
@@ -36,36 +37,10 @@ bitflags! {
     }
 }
 
-pub struct CPU {
-    pub register_a: u8,
-    pub register_x: u8,
-    pub register_y: u8,
-    pub status: StatusFlags,
-    pub program_counter: u16,
-    pub stack_pointer: u8,
-    memory: [u8; 0xFFFF]
-}
+pub trait Mem {
+    fn mem_read(&self, addr: u16) -> u8;
 
-impl CPU {
-    pub fn new() -> CPU {
-        CPU {
-            register_a : 0,
-            register_x: 0,
-            register_y: 0,
-            status: StatusFlags::from_bits_retain(0b00100100),
-            program_counter: 0,
-            stack_pointer: STACK_RESET,
-            memory: [0; 0xFFFF]
-        }
-    }
-
-    pub fn mem_read(&self, addr: u16) -> u8 {
-        self.memory[addr as usize]
-    }
-
-    pub fn mem_write(&mut self, addr: u16, data: u8) {
-        self.memory[addr as usize] = data;
-    }
+    fn mem_write(&mut self, addr: u16, data: u8);
 
     fn mem_read_u16(&self, addr: u16) -> u16 {
         let low= self.mem_read(addr) as u16;
@@ -79,6 +54,50 @@ impl CPU {
         self.mem_write(addr, low);
         self.mem_write(addr+1, high);        
     }
+}
+
+pub struct CPU {
+    pub register_a: u8,
+    pub register_x: u8,
+    pub register_y: u8,
+    pub status: StatusFlags,
+    pub program_counter: u16,
+    pub stack_pointer: u8,
+    pub bus: Bus,
+}
+
+impl Mem for CPU {
+    fn mem_read(&self, addr: u16) -> u8 {
+        self.bus.mem_read(addr)
+    }
+
+    fn mem_write(&mut self, addr: u16, data: u8) {
+        self.bus.mem_write(addr, data);
+    }
+
+    fn mem_read_u16(&self, addr: u16) -> u16 {
+        self.bus.mem_read_u16(addr)
+    }
+
+    fn mem_write_u16(&mut self, addr: u16, data: u16) {
+             self.bus.mem_write_u16(addr, data);
+    }
+}
+
+impl CPU {
+    pub fn new() -> CPU {
+        CPU {
+            register_a : 0,
+            register_x: 0,
+            register_y: 0,
+            status: StatusFlags::from_bits_retain(0b00100100),
+            program_counter: 0,
+            stack_pointer: STACK_RESET,
+            bus: Bus::new(),
+        }
+    }
+
+    
 
     fn stack_push(&mut self, value: u8) {
         self.mem_write(STACK_BASE as u16 + self.stack_pointer as u16, value);
@@ -666,7 +685,9 @@ impl CPU {
     }
 
     pub fn load(&mut self, program: Vec<u8>) {
-        self.memory[0x0600 .. (0x0600 + program.len())].copy_from_slice(&program[..]);
+        for i in 0 .. (program.len() as u16) {
+            self.mem_write(0x0600 + i, program[i as usize]);
+        }
         self.mem_write_u16(0xFFFC, 0x0600);
         //println!("loaded game");
     }
@@ -1150,6 +1171,34 @@ mod test {
         assert_eq!(cpu.register_a, 0xFF >> 1);
         assert!(cpu.status.contains(StatusFlags::CARRY));
     }
-    
+
+    #[test]
+    fn test_lsr_zero_page() {
+        let mut cpu = CPU::new();
+        cpu.mem_write(0x0010, 0xAA);
+        cpu.load_and_run(vec![0x46, 0x10, 0x00]);
+        assert_eq!(cpu.mem_read(0x0010), 0xAA >> 1);
+    }
+
+    #[test]
+    fn test_ora_immidiate() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0xAA, 0x09, 0x00, 0x00]);
+        assert_eq!(cpu.register_a, 0xAA);
+    }
+
+    #[test]
+    fn test_pha() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0xAA, 0x48, 0x00]);
+        assert_eq!(cpu.stack_pull(), 0xAA);
+    }
+
+    #[test]
+    fn test_sbc_immidiate() {
+        let mut cpu = CPU::new();
+        cpu.load_and_run(vec![0xA9, 0x64, 0xE9, 0x28, 0x00]);
+        assert_eq!(cpu.register_a, 0x3B);
+    }
 
 }

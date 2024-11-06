@@ -1,6 +1,10 @@
 pub mod cpu;
 pub mod opcodes;
+pub mod bus;
+
 use cpu::CPU;
+use cpu::Mem;
+use bus::Bus;
 use rand::Rng;
 use sdl2::event::Event;
 use sdl2::EventPump;
@@ -53,16 +57,16 @@ fn handle_user_input(cpu: &mut CPU, event_pump: &mut EventPump) {
                 std::process::exit(0)
             },
             Event::KeyDown { keycode: Some(Keycode::W), .. } => {
-                cpu.mem_write(0xff, 0x77);
+                cpu.mem_write(0xFF, 0x77);
             },
             Event::KeyDown { keycode: Some(Keycode::S), .. } => {
-                cpu.mem_write(0xff, 0x73);
+                cpu.mem_write(0xFF, 0x73);
             },
             Event::KeyDown { keycode: Some(Keycode::A), .. } => {
-                cpu.mem_write(0xff, 0x61);
+                cpu.mem_write(0xFF, 0x61);
             },
             Event::KeyDown { keycode: Some(Keycode::D), .. } => {
-                cpu.mem_write(0xff, 0x64);
+                cpu.mem_write(0xFF, 0x64);
             }
             _ => {/* do nothing */}
         }
@@ -117,16 +121,17 @@ fn main() {
     let mut cpu = CPU::new();
     cpu.load(game_code);
     cpu.reset();
+    cpu.program_counter = 0x0600;
 
     let mut screen_state = [0 as u8; 32 * 3 * 32];
     let mut rng = rand::thread_rng();
 
-    println!("calling run_with_callback");
+    //println!("calling run_with_callback");
     // run the game cycle
     cpu.run_with_callback(move |cpu| {
         handle_user_input(cpu, &mut event_pump);
 
-        cpu.mem_write(0xfe, rng.gen_range(1..16));
+        cpu.mem_write(0xFE, rng.gen_range(1..16));
 
         if read_screen_state(cpu, &mut screen_state) {
             texture.update(None, &screen_state, 32 * 3).unwrap();
